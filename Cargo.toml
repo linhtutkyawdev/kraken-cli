@@ -11,3 +11,4 @@ clap = { version = "4.4.8", features = ["derive"] }
 cliclack = "0.1.9"
 colorful = "0.2.2"
 console = "0.15.7"
+toml = "0.8.8"

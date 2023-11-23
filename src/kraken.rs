@@ -6,7 +6,7 @@ use colorful::{Color, Colorful};
 use console::{style, Style};
 use std::{fs::OpenOptions, io::Write, process::Command};
 
-struct MagentaTheme;
+pub struct MagentaTheme;
 
 impl Theme for MagentaTheme {
     fn bar_color(&self, state: &ThemeState) -> Style {
@@ -31,9 +31,7 @@ fn logo() {
 
 fn add_kraken_toml(language: &str, framework: &str) -> Result<(), std::io::Error> {
     // Check if "Kraken.toml" already exists
-    let file_exists = std::path::Path::new("Kraken.toml").exists();
-
-    if file_exists {
+    if std::path::Path::new("Kraken.toml").exists() {
         // If the file exists, return an error or handle it as needed
         return Err(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,
@@ -42,7 +40,8 @@ fn add_kraken_toml(language: &str, framework: &str) -> Result<(), std::io::Error
     }
 
     // If the file doesn't exist, create it and write the content
-    let content = format!("[kraken]\nlanguage = \"{language}\"\nframework = \"{framework}\"\n");
+    let content =
+        format!("[kraken]\nlanguage = \"{language}\"\nframework = \"{framework}\"\n\n[features]\n");
 
     // Use OpenOptions to create the file if it doesn't exist or truncate it if it does
     let mut file = OpenOptions::new()
