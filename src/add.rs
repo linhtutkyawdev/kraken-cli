@@ -3,10 +3,12 @@ use crate::{execute::Execute, kraken::MagentaTheme};
 use clap::Subcommand;
 use cliclack::{confirm, intro, log, outro, set_theme, spinner};
 use console::style;
+use proc_macro2::{Ident, Span};
+use quote::quote;
 use std::fs::{self, create_dir_all, read_to_string, File, OpenOptions};
-use std::io::prelude::*;
+use std::io::{self, prelude::*, SeekFrom};
 use std::process::{Command, Stdio};
-use toml::{self, Value};
+use toml_edit::Document;
 
 #[derive(Subcommand)]
 pub enum Add {
@@ -26,22 +28,34 @@ impl Execute for Add {
         intro(style(" kraken ").on_magenta().black())?;
         match self {
             Self::Askama => {
-                check_feature_exists("askama").unwrap();
-                let mut spinner = spinner();
-                spinner.start("Adding crates!");
-                add_dependencies();
-                spinner.stop("Crates have arrived!");
-                match create_html_base_file() {
-                    Ok(()) => log::info("Added base.html or layout!")?,
-                    Err(_err) => log::error("Error Adding base.html!")?,
-                }
-                if confirm("Do you want to create a page?")
-                    .initial_value(true)
-                    .interact()?
-                {
-                    log::info("create page. 🎉")?;
-                }
-                outro("Askama added successfully. 🎉")?;
+                match check_feature("askama") {
+                    Ok(()) => {
+                        let mut spinner = spinner();
+                        spinner.start("Adding crates!");
+                        add_dependencies();
+                        spinner.stop("Crates have arrived!");
+                        match create_html_base_file() {
+                            Ok(()) => log::info("Added base.html or layout!")?,
+                            Err(_err) => log::error("Error Adding base.html!")?,
+                        }
+                        if confirm("Do you want to create a page?")
+                            .initial_value(true)
+                            .interact()?
+                        {
+                            log::info("create page. 🎉")?;
+
+                            generate_page_mod_rs("index", "Kraken - Index")?;
+                            add_page_mod_to_main_rs("index")?;
+                        }
+
+                        add_feature("askama").unwrap();
+                        outro("Askama added successfully. 🎉")?;
+                    }
+                    Err(err) => {
+                        log::error(err)?;
+                        outro("Failed to add askama!!!")?;
+                    }
+                };
                 Ok(())
             }
             Self::Tailwindcss => {
@@ -175,36 +189,106 @@ fn add_htmx_script() -> Result<(), std::io::Error> {
     }
 }
 
-fn check_feature_exists(feature_name: &str) -> Result<(), std::io::Error> {
-    if fs::metadata("Kraken.toml").is_ok() {
+fn kraken_toml_exists() -> bool {
+    fs::metadata("Kraken.toml").is_ok()
+}
+
+fn add_feature(key: &str) -> Result<(), std::io::Error> {
+    if kraken_toml_exists() {
         let toml_content = fs::read_to_string("Kraken.toml")?;
+        let mut doc = toml_content.parse::<Document>().expect("invalid doc");
+        doc["features"][key] = toml_edit::value(true);
+        fs::write("Kraken.toml", doc.to_string())?;
+    }
+    Ok(())
+}
 
-        // Parse the TOML content
-        let parsed_toml: Result<Value, toml::de::Error> = toml::from_str(&toml_content);
+fn check_feature(key: &str) -> Result<(), std::io::Error> {
+    if kraken_toml_exists() {
+        if fs::read_to_string("Kraken.toml")?
+            .parse::<Document>()
+            .expect("invalid doc")["features"]
+            .get(key)
+            .is_some()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "Features already exists!",
+            ));
+        }
+    }
+    Ok(())
+}
 
-        match parsed_toml {
-            Ok(parsed_toml) => {
-                // Check if [features] section exists
-                if let Some(features) = parsed_toml.get("features") {
-                    // Check if the specific feature exists
-                    if let Some(_) = features.get(feature_name) {
-                        println!("The [features.{}] exists in Kraken.toml", feature_name);
-                    } else {
-                        println!(
-                            "The [features.{}] does not exist in Kraken.toml",
-                            feature_name
-                        );
-                    }
-                } else {
-                    println!("The [features] section does not exist in Kraken.toml");
-                }
-            }
-            Err(err) => {
-                eprintln!("Error parsing Kraken.toml: {}", err);
+fn generate_page_mod_rs(page_name: &str, page_title: &str) -> std::io::Result<()> {
+    let page_file = format!("{page_name}.html");
+    let code = quote! {
+        use askama::Template;
+        use askama_axum::IntoResponse;
+
+        #[derive(Template)]
+        #[template(path = #page_file)]
+        struct TheTemplate<'a> {
+            title: &'a str,
+        }
+
+        pub async fn main() -> impl IntoResponse {
+            TheTemplate {
+                title: #page_title,
             }
         }
+    };
+
+    // Change the path to your desired location for the mod.rs file
+    let file_path = format!("src/kraken/{page_name}.rs");
+
+    let mut file = File::create(file_path)?;
+
+    // Write the generated code to the file
+    file.write_all(code.to_string().as_bytes())?;
+
+    // Run rustfmt on the prettify file
+    Command::new("rustfmt")
+        .arg(format!("src/kraken/{page_name}.rs"))
+        .arg("--edition")
+        .arg("2021")
+        .status()
+        .expect("Failed to run rustfmt");
+
+    Ok(())
+}
+
+fn add_page_mod_to_main_rs(page_name: &str) -> std::io::Result<()> {
+    let module_name = Ident::new(page_name, Span::call_site());
+
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open("src/kraken/mod.rs")?;
+
+    // Read the existing content
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    // Check if the module already exists
+    if content.contains(&format!("pub mod {};", module_name)) {
+        println!("Module already exists.");
     } else {
-        println!("Kraken.toml does not exist");
+        // Append the new module
+        let new_module_code = quote! {
+            pub mod #module_name;
+        };
+
+        let syntax_tree = syn::parse_file(&new_module_code.to_string()).unwrap();
+        let formatted = prettyplease::unparse(&syntax_tree);
+        content = formatted + &content;
+
+        // Seek to the beginning of the file and write the modified content
+        file.seek(SeekFrom::Start(0))?;
+        file.set_len(0)?;
+        file.write_all(content.as_bytes())?;
+        println!("Module added to mod.rs.");
     }
 
     Ok(())

@@ -11,4 +11,10 @@ clap = { version = "4.4.8", features = ["derive"] }
 cliclack = "0.1.9"
 colorful = "0.2.2"
 console = "0.15.7"
+prettyplease = "0.2.15"
+proc-macro2 = "1.0.69"
+quote = "1.0.33"
+rustfmt = "0.10.0"
+syn = { version = "2.0.39", features = ["full"] }
 toml = "0.8.8"
+toml_edit = "0.21.0"

@@ -31,13 +31,18 @@ fn logo() {
 
 fn add_kraken_toml(language: &str, framework: &str) -> Result<(), std::io::Error> {
     // Check if "Kraken.toml" already exists
-    if std::path::Path::new("Kraken.toml").exists() {
+    if std::path::Path::new("src/kraken/Kraken.toml").exists() {
         // If the file exists, return an error or handle it as needed
         return Err(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,
             "Kraken.toml already exists",
         ));
     }
+
+    Command::new("mkdir")
+        .arg("src/kraken")
+        .status()
+        .expect("Failed to run mkdir");
 
     // If the file doesn't exist, create it and write the content
     let content =
@@ -48,7 +53,7 @@ fn add_kraken_toml(language: &str, framework: &str) -> Result<(), std::io::Error
         .write(true)
         .create(true)
         .truncate(true) // Truncate the file if it already exists
-        .open("Kraken.toml")?;
+        .open("src/kraken/Kraken.toml")?;
 
     file.write_all(content.as_bytes())?;
     Ok(())
@@ -98,6 +103,8 @@ pub enum Kraken {
         #[command(subcommand)]
         add_commands: Add,
     },
+    /// do wev i want
+    Wev,
 }
 
 impl Execute for Kraken {
@@ -108,6 +115,7 @@ impl Execute for Kraken {
                 Ok(())
             }
             Self::Add { add_commands } => add_commands.execute(),
+            Self::Wev => Ok(()),
         }
     }
 }
