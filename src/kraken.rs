@@ -72,13 +72,11 @@ fn ask_info() -> std::io::Result<()> {
         .interact()?
     {
         "rs" => {
-            log::info(format!("🚀 Ahoy, Fearless Rustacean Explorer! 🦀"))?;
+            log::info("🚀 Ahoy, Fearless Rustacean Explorer! 🦀")?;
             "rs"
         }
         _ => {
-            log::info(format!(
-                "Wrong answer, just use rust! It's like programming, but for grown-ups."
-            ))?;
+            log::info("Wrong answer, just use rust! It's like programming, but for grown-ups.")?;
             "rs"
         }
     };
@@ -88,7 +86,11 @@ fn ask_info() -> std::io::Result<()> {
             .interact()?,
     };
 
-    add_kraken_toml(language, framework)?;
+    match add_kraken_toml(language, framework) {
+        Ok(()) => log::success("Successfully created Kraken.toml in \"src/kraken\"")?,
+        Err(err) => log::error(err)?,
+    }
+
     outro("Kraken Initialized")?;
 
     Ok(())
