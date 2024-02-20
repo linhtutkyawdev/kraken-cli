@@ -1,10 +1,12 @@
 // add.rs
 use crate::{execute::Execute, kraken::MagentaTheme};
 use clap::Subcommand;
-use cliclack::{confirm, input, intro, log, outro, set_theme, spinner};
+use cliclack::log::{error, info};
+use cliclack::{confirm, input, intro, outro, set_theme, spinner};
 use console::style;
 use proc_macro2::{Ident, Span};
 use quote::quote;
+use regex::Regex;
 use std::fs::{self, create_dir_all, read_to_string, File, OpenOptions};
 use std::io::{self, prelude::*, SeekFrom};
 use std::process::{Command, Stdio};
@@ -28,86 +30,85 @@ impl Execute for Add {
         intro(style(" kraken ").on_magenta().black())?;
         match self {
             Self::Askama => {
-                match check_feature("askama") {
-                    Ok(()) => {
-                        let mut spinner = spinner();
-                        spinner.start("Adding crates!");
-                        add_dependencies();
-                        spinner.stop("Crates have arrived!");
-                        match create_html_base_file() {
-                            Ok(()) => log::info("Added base.html or layout!")?,
-                            Err(_err) => log::error("Error Adding base.html!")?,
-                        }
-                        if confirm("Do you want to create a page?")
-                            .initial_value(true)
-                            .interact()?
-                        {
-                            create_new_page()?;
-                        }
-                        add_feature("askama").unwrap();
-                        outro("Askama added successfully. 🎉")?;
-                    }
-                    Err(err) => {
-                        log::error(err)?;
-                        outro("Failed to add askama!!!")?;
-                    }
-                };
+                add_askama()?;
                 Ok(())
             }
             Self::Tailwindcss => {
-                generate_tailwindcss_mod_rs()?;
-                add_module_to_main_rs("tailwindcss")?;
-                if std::path::Path::new("./templates/base.html").exists() {
-                    // edit base.html and add some link tag
-                    match add_tag_to_head(
-                        r#"
-    <!-- tailwind deez css -->
-    <link rel="stylesheet" href="/styles/tailwind.css" />
-"#,
-                        "/styles/tailwind.css",
-                    ) {
-                        Ok(()) => println!("base.html edited successfully."),
-                        Err(err) => eprintln!("Error editing base.html: {}", err),
-                    };
-                } else {
-                    // error
-                }
-                println!("Tailwindcss added!");
+                add_tailwindcss()?;
                 Ok(())
             }
             Self::Htmx => {
-                // check_if_base.html_exists
-                if std::path::Path::new("./templates/base.html").exists() {
-                    // edit base.html and add some link tag
-                    match add_tag_to_head(
-                        r#"
-    <!-- cdn deez nuts for htmx -->
-    <script
-      src="https://unpkg.com/htmx.org@1.9.8"
-      integrity="sha384-rgjA7mptc2ETQqXoYC3/zJvkU7K/aP44Y+z7xQuJiVnB/422P/Ak+F/AqFR7E4Wr"
-      crossorigin="anonymous"
-    ></script>
-"#,
-                        "https://unpkg.com/htmx.org@",
-                    ) {
-                        Ok(()) => println!("base.html edited successfully."),
-                        Err(err) => eprintln!("Error editing base.html: {}", err),
-                    };
-                } else {
-                    // error
-                }
-                println!("Htmx added!");
+                add_htmx()?;
                 Ok(())
             }
             Self::Page => {
-                create_new_page()?;
+                add_page()?;
                 Ok(())
             }
         }
     }
 }
 
-fn add_dependencies() {
+pub fn add_askama() -> std::io::Result<()> {
+    match check_feature("askama") {
+        Ok(()) => {
+            let mut spinner = spinner();
+            spinner.start("Adding crates!");
+            add_dependencies();
+            spinner.stop("Crates have arrived!");
+            match create_html_base_file() {
+                Ok(()) => info("Added base.html or layout!")?,
+                Err(_err) => error("Error Adding base.html!")?,
+            }
+            add_feature("askama").unwrap();
+            info("Askama added successfully. 🎉")?;
+            if confirm("Do you want to create a page?")
+                .initial_value(true)
+                .interact()?
+            {
+                add_page()?;
+            }
+        }
+        Err(err) => {
+            error(err)?;
+            info("Failed to add askama!!!")?;
+        }
+    };
+    Ok(())
+}
+
+pub fn add_tailwindcss() -> std::io::Result<()> {
+    generate_tailwindcss_mod_rs()?;
+    add_module_to_mod_rs("tailwindcss")?;
+
+    if !std::path::Path::new("./tailwind.config.js").exists() {
+        println!("tailwind not initialized!");
+    } else if !std::path::Path::new("./styles/styles.js").exists() {
+        match create_tailwind_base_styles() {
+            Ok(()) => println!("created styles/styles.css."),
+            Err(err) => eprintln!("Error creating styles/styles.css: {}", err),
+        }
+    } else if std::path::Path::new("./templates/base.html").exists() {
+        // edit base.html and add some link tag
+        match add_tag_to_head(
+            r#"
+<!-- tailwind deez css -->
+<link rel="stylesheet" href="/styles/tailwind.css" />
+"#,
+            "/styles/tailwind.css",
+        ) {
+            Ok(()) => println!("base.html edited successfully."),
+            Err(err) => eprintln!("Error editing base.html: {}", err),
+        };
+        println!("Tailwindcss added!");
+        println!("Note: you need to put the tailwind output file with the name \"tailwind.css\" inside the folder \"styles\"")
+    } else {
+        println!("No base.html!");
+    }
+    Ok(())
+}
+
+pub fn add_dependencies() {
     // Create a new Command
     let mut cmd = Command::new("cargo")
         .args(["add", "askama", "-F", "askama/with-axum", "askama_axum"])
@@ -123,7 +124,28 @@ fn add_dependencies() {
     }
 }
 
-fn create_html_base_file() -> Result<(), std::io::Error> {
+pub fn add_htmx() -> std::io::Result<()> {
+    // check_if_base.html_exists
+    if std::path::Path::new("./templates/base.html").exists() {
+        // edit base.html and add some link tag
+        match add_tag_to_head(
+            r#"
+        <!-- cdn deez nuts for htmx -->
+        <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    "#,
+            "https://unpkg.com/htmx.org@",
+        ) {
+            Ok(()) => println!("base.html edited successfully."),
+            Err(err) => eprintln!("Error editing base.html: {}", err),
+        };
+        println!("Htmx added!");
+    } else {
+        println!("No base.html!");
+    }
+    Ok(())
+}
+
+pub fn create_html_base_file() -> Result<(), std::io::Error> {
     // Create the templates directory if it doesn't exist
     let templates_path = format!("templates");
     create_dir_all(&templates_path)?;
@@ -151,7 +173,27 @@ fn create_html_base_file() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn add_tag_to_head(tag: &str, identity: &str) -> Result<(), std::io::Error> {
+pub fn create_tailwind_base_styles() -> Result<(), std::io::Error> {
+    // Create the styles directory if it doesn't exist
+    let styles_path = format!("styles");
+    create_dir_all(&styles_path)?;
+
+    // Create base.html
+    let base_styles_path = format!("{styles_path}/styles.css");
+    let mut base_styles_file = File::create(&base_styles_path)?;
+    base_styles_file.write_all(
+        r#"
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+"#
+        .as_bytes(),
+    )?;
+
+    Ok(())
+}
+
+pub fn add_tag_to_head(tag: &str, identity: &str) -> Result<(), std::io::Error> {
     // Read existing content of base.html
     let mut base_html_content = read_to_string("./templates/base.html")?;
     if base_html_content.find(identity).is_none() {
@@ -180,11 +222,11 @@ fn add_tag_to_head(tag: &str, identity: &str) -> Result<(), std::io::Error> {
     }
 }
 
-fn kraken_toml_exists() -> bool {
+pub fn kraken_toml_exists() -> bool {
     fs::metadata("src/kraken/Kraken.toml").is_ok()
 }
 
-fn add_feature(key: &str) -> Result<(), std::io::Error> {
+pub fn add_feature(key: &str) -> Result<(), std::io::Error> {
     if kraken_toml_exists() {
         let toml_content = fs::read_to_string("src/kraken/Kraken.toml")?;
         let mut doc = toml_content.parse::<Document>().expect("invalid doc");
@@ -194,7 +236,7 @@ fn add_feature(key: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn check_feature(key: &str) -> Result<(), std::io::Error> {
+pub fn check_feature(key: &str) -> Result<(), std::io::Error> {
     if kraken_toml_exists() {
         if fs::read_to_string("src/kraken/Kraken.toml")?
             .parse::<Document>()
@@ -202,6 +244,7 @@ fn check_feature(key: &str) -> Result<(), std::io::Error> {
             .get(key)
             .is_some()
         {
+            error("Features already exists!")?;
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 "Features already exists!",
@@ -211,7 +254,7 @@ fn check_feature(key: &str) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn generate_page_template(page_name: &str, ai_generated_htmx: &str) -> std::io::Result<()> {
+pub fn generate_page_template(page_name: &str, ai_generated_htmx: &str) -> std::io::Result<()> {
     // Create the templates directory if it doesn't exist
     create_dir_all(&"templates")?;
     // Create page.html
@@ -232,7 +275,7 @@ fn generate_page_template(page_name: &str, ai_generated_htmx: &str) -> std::io::
     Ok(())
 }
 
-fn generate_page_mod_rs(page_name: &str, page_title: &str) -> std::io::Result<()> {
+pub fn generate_page_mod_rs(page_name: &str, page_title: &str) -> std::io::Result<()> {
     let page_file = format!("{page_name}.html");
     let code = quote! {
         use askama::Template;
@@ -260,17 +303,56 @@ fn generate_page_mod_rs(page_name: &str, page_title: &str) -> std::io::Result<()
     file.write_all(code.to_string().as_bytes())?;
 
     // Run rustfmt on the prettify file
-    Command::new("rustfmt")
+    if Command::new("rustfmt")
         .arg(format!("src/kraken/{page_name}.rs"))
         .arg("--edition")
         .arg("2021")
         .status()
-        .expect("Failed to run rustfmt");
+        .is_err()
+    {
+        error("Failed to run rustfmt")?;
+
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Failed to run rustfmt",
+        ));
+    }
 
     Ok(())
 }
 
-fn add_module_to_main_rs(module_name: &str) -> std::io::Result<()> {
+pub fn add_kraken_to_main_rs() -> std::io::Result<()> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open("src/main.rs")?;
+
+    // Read the existing content
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    // Check if the module already exists
+    if !content.contains(&format!("mod kraken;")) {
+        // Append the new module
+        let new_module_code = quote! {
+            mod kraken;
+        };
+
+        let syntax_tree = syn::parse_file(&new_module_code.to_string()).unwrap();
+        let formatted = prettyplease::unparse(&syntax_tree);
+        content = formatted + &content;
+
+        // Seek to the beginning of the file and write the modified content
+        file.seek(SeekFrom::Start(0))?;
+        file.set_len(0)?;
+        file.write_all(content.as_bytes())?;
+    }
+
+    Ok(())
+}
+
+pub fn add_module_to_mod_rs(module_name: &str) -> std::io::Result<()> {
     let module_name = Ident::new(module_name, Span::call_site());
 
     let mut file = OpenOptions::new()
@@ -285,7 +367,11 @@ fn add_module_to_main_rs(module_name: &str) -> std::io::Result<()> {
 
     // Check if the module already exists
     if content.contains(&format!("pub mod {};", module_name)) {
-        println!("Module already exists.");
+        error("Module already exists.")?;
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "Module already exists.",
+        ));
     } else {
         // Append the new module
         let new_module_code = quote! {
@@ -300,9 +386,99 @@ fn add_module_to_main_rs(module_name: &str) -> std::io::Result<()> {
         file.seek(SeekFrom::Start(0))?;
         file.set_len(0)?;
         file.write_all(content.as_bytes())?;
-        println!("Module added to mod.rs.");
     }
 
+    Ok(())
+}
+
+pub fn call_module_fn_in_main_rs(module_name: &str) -> std::io::Result<()> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open("src/main.rs")?;
+
+    // Read the existing content
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    content = content.replace(
+        r#"
+async fn hello_world() -> &'static str {
+    "Hello, world!"
+}
+"#,
+        "",
+    );
+
+    let pattern = format!(r#".route\(\"/{}\", get\((\w+)\)"#,get_route(module_name));
+    let replacement = format!(
+        "\n.route(\"/{}\", get({}::main)",
+        get_route(module_name),
+        module_name
+    );
+    let regex = Regex::new(&pattern).unwrap();
+    content = regex.replace(&content, &replacement).to_string();
+
+    if !content.contains(&replacement) {
+        let old ="Router::new()";
+        let new = old.to_string() +"\n" +&replacement + ")";
+        content=content.replace(old, &new);
+    }
+    // Seek to the beginning of the file and write the modified content
+    file.seek(SeekFrom::Start(0))?;
+    file.set_len(0)?;
+    file.write_all(content.as_bytes())?;
+
+    Ok(())
+}
+
+fn get_route(module_name: &str) -> &str {
+    if module_name == "index" {
+        return "";
+    }
+    return module_name;
+}
+
+pub fn add_module_to_main_rs(module_name: &str) -> std::io::Result<()> {
+    let module_name = Ident::new(module_name, Span::call_site());
+
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open("src/main.rs")?;
+
+    // Read the existing content
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+
+    let pattern = format!(r"kraken::\{{.*{}.*\}}", module_name);
+    let regex = Regex::new(&pattern).unwrap();
+
+    // Check if the line matches the pattern
+    if regex.is_match(&content) {
+        error("Module already used.")?;
+
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "Module already used.",
+        ));
+    } else {
+        // Append the new module
+        let new_module_code = quote! {
+            use kraken::#module_name;
+        };
+
+        let syntax_tree = syn::parse_file(&new_module_code.to_string()).unwrap();
+        let formatted = prettyplease::unparse(&syntax_tree);
+        content = formatted + &content;
+
+        // Seek to the beginning of the file and write the modified content
+        file.seek(SeekFrom::Start(0))?;
+        file.set_len(0)?;
+        file.write_all(content.as_bytes())?;
+    }
     Ok(())
 }
 
@@ -315,22 +491,45 @@ pub fn capitalize(s: &str) -> String {
     }
 }
 
-fn create_new_page() -> anyhow::Result<()> {
+pub fn add_page() -> std::io::Result<()> {
     let page_name: String = input("Page name").default_input("index").interact()?;
     let page_title: String = input("Page title")
         .default_input(&capitalize(&page_name))
         .interact()?;
-    generate_page_template(
+
+    if generate_page_template(
         &page_name,
         r#"<section class="bg-indigo-400 text-white font-black text-6xl">Hello</section>"#,
-    )?;
-    generate_page_mod_rs(&page_name, &page_title)?;
-    add_module_to_main_rs(&page_name)?;
-    log::info(format!("Successfully created: {page_name} page."))?;
-    Ok(())
+    ).is_err() {
+        outro("An error occured!")?;
+        return Ok(());
+    }
+
+    if generate_page_mod_rs(&page_name, &page_title).is_err() {
+        outro("An error occured!")?;
+        return Ok(());
+    }
+    if add_module_to_mod_rs(&page_name).is_err() {
+        outro("An error occured!")?;
+        return Ok(());
+    }
+    if add_module_to_main_rs(&page_name).is_err() {
+        outro("An error occured!")?;
+        return Ok(());
+    }
+    if add_kraken_to_main_rs().is_err() {
+        outro("An error occured!")?;
+        return Ok(());
+    }
+    if call_module_fn_in_main_rs(&page_name).is_err() {
+        outro("An error occured!")?;
+        return Ok(());
+    }
+
+    outro(format!("Successfully created: {page_name} page. 🎉"))
 }
 
-fn generate_tailwindcss_mod_rs() -> std::io::Result<()> {
+pub fn generate_tailwindcss_mod_rs() -> std::io::Result<()> {
     let code = quote! {
         use askama_axum::{IntoResponse, Response};
         use axum::http::StatusCode;
