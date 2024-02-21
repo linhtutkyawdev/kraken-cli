@@ -28,6 +28,13 @@ impl Execute for Add {
     fn execute(&self) -> anyhow::Result<()> {
         set_theme(MagentaTheme);
         intro(style(" kraken ").on_magenta().black())?;
+
+        // Check if "Kraken.toml" exists
+        if !std::path::Path::new("src/kraken/Kraken.toml").exists() {
+            error("Kraken not initialized.")?;
+            return Ok(());
+        }
+
         match self {
             Self::Askama => {
                 add_askama()?;
@@ -80,15 +87,40 @@ pub fn add_askama() -> std::io::Result<()> {
 pub fn add_tailwindcss() -> std::io::Result<()> {
     generate_tailwindcss_mod_rs()?;
     add_module_to_mod_rs("tailwindcss")?;
+    add_module_to_main_rs("tailwindcss")?;
+    call_module_fn_in_main_rs("tailwindcss", Some("styles/tailwind.css"))?;
 
     if !std::path::Path::new("./tailwind.config.js").exists() {
-        println!("tailwind not initialized!");
-    } else if !std::path::Path::new("./styles/styles.js").exists() {
+        if Command::new("tailwindcss").arg("init").status().is_err() {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "tailwindcss command faied!",
+            ));
+        }
+    }
+
+    edit_tailwind_config()?;
+
+    if !std::path::Path::new("./styles/styles.js").exists() {
         match create_tailwind_base_styles() {
             Ok(()) => println!("created styles/styles.css."),
             Err(err) => eprintln!("Error creating styles/styles.css: {}", err),
         }
-    } else if std::path::Path::new("./templates/base.html").exists() {
+    }
+
+    // tailwindcss -i styles/styles.css -o styles/tailwind.css
+    if Command::new("tailwindcss")
+        .args(["-i", "styles/styles.css", "-o", "styles/tailwind.css"])
+        .status()
+        .is_err()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "tailwindcss command faied!",
+        ));
+    }
+
+    if std::path::Path::new("./templates/base.html").exists() {
         // edit base.html and add some link tag
         match add_tag_to_head(
             r#"
@@ -101,11 +133,33 @@ pub fn add_tailwindcss() -> std::io::Result<()> {
             Err(err) => eprintln!("Error editing base.html: {}", err),
         };
         println!("Tailwindcss added!");
-        println!("Note: you need to put the tailwind output file with the name \"tailwind.css\" inside the folder \"styles\"")
     } else {
         println!("No base.html!");
     }
     Ok(())
+}
+
+fn edit_tailwind_config() -> std::io::Result<()> {
+    let file_path = "./tailwind.config.js";
+    if !std::path::Path::new(&file_path).exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "tailwind.config.js not found!",
+        ));
+    }
+
+    let file_content: Vec<String> = fs::read_to_string(&file_path)?
+        .lines()
+        .map(|line| {
+            if line.contains("content: ") {
+                r#"  content: ["./templates/**/*.html"],"#.to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+
+    fs::write(&file_path, file_content.join("\n"))
 }
 
 pub fn add_dependencies() {
@@ -182,8 +236,7 @@ pub fn create_tailwind_base_styles() -> Result<(), std::io::Error> {
     let base_styles_path = format!("{styles_path}/styles.css");
     let mut base_styles_file = File::create(&base_styles_path)?;
     base_styles_file.write_all(
-        r#"
-@tailwind base;
+        r#"@tailwind base;
 @tailwind components;
 @tailwind utilities;
 "#
@@ -391,7 +444,12 @@ pub fn add_module_to_mod_rs(module_name: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn call_module_fn_in_main_rs(module_name: &str) -> std::io::Result<()> {
+pub fn call_module_fn_in_main_rs(module_name: &str, src: Option<&str>) -> std::io::Result<()> {
+    let route = match src {
+        Some(r) => get_route(r),
+        None => get_route(module_name),
+    };
+
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -411,19 +469,15 @@ async fn hello_world() -> &'static str {
         "",
     );
 
-    let pattern = format!(r#".route\(\"/{}\", get\((\w+)\)"#,get_route(module_name));
-    let replacement = format!(
-        "\n.route(\"/{}\", get({}::main)",
-        get_route(module_name),
-        module_name
-    );
+    let pattern = format!(r#".route\(\"/{}\", get\((\w+)\)"#, route);
+    let replacement = format!("\n.route(\"/{}\", get({}::main)", route, module_name);
     let regex = Regex::new(&pattern).unwrap();
     content = regex.replace(&content, &replacement).to_string();
 
     if !content.contains(&replacement) {
-        let old ="Router::new()";
-        let new = old.to_string() +"\n" +&replacement + ")";
-        content=content.replace(old, &new);
+        let old = "Router::new()";
+        let new = old.to_string() + &replacement + ")";
+        content = content.replace(old, &new);
     }
     // Seek to the beginning of the file and write the modified content
     file.seek(SeekFrom::Start(0))?;
@@ -500,7 +554,9 @@ pub fn add_page() -> std::io::Result<()> {
     if generate_page_template(
         &page_name,
         r#"<section class="bg-indigo-400 text-white font-black text-6xl">Hello</section>"#,
-    ).is_err() {
+    )
+    .is_err()
+    {
         outro("An error occured!")?;
         return Ok(());
     }
@@ -521,7 +577,7 @@ pub fn add_page() -> std::io::Result<()> {
         outro("An error occured!")?;
         return Ok(());
     }
-    if call_module_fn_in_main_rs(&page_name).is_err() {
+    if call_module_fn_in_main_rs(&page_name, None).is_err() {
         outro("An error occured!")?;
         return Ok(());
     }
@@ -534,7 +590,7 @@ pub fn generate_tailwindcss_mod_rs() -> std::io::Result<()> {
         use askama_axum::{IntoResponse, Response};
         use axum::http::StatusCode;
 
-        pub async fn styles() -> impl IntoResponse {
+        pub async fn main() -> impl IntoResponse {
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "text/css")

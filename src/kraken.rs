@@ -1,6 +1,6 @@
 // kraken.rs
 use crate::{
-    add::{add_askama, Add},
+    add::{add_askama, add_tailwindcss, Add},
     execute::Execute,
 };
 use clap::Subcommand;
@@ -156,11 +156,11 @@ fn create() -> std::io::Result<()> {
         .interact()?
     {
         add_askama()?;
-        // add_tailwindcss()?;
+        add_tailwindcss()?;
         // add_htmx()?;
     }
 
-    println!("Now you can run \"cd {}\" and \"cargo shuttle run\".",name);
+    println!("Now you can try \n\t\t\"cd {} && cargo shuttle run\".",name);
     Ok(())
 }
 
