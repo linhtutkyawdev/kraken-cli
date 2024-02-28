@@ -5,7 +5,9 @@ use crate::{
 };
 use clap::Subcommand;
 use cliclack::{
-    confirm, input, intro, log::{error, info, success}, select, set_theme, Theme, ThemeState
+    confirm, input, intro,
+    log::{error, info, success},
+    select, set_theme, Theme, ThemeState,
 };
 use colorful::{Color, Colorful};
 use console::{style, Style};
@@ -67,7 +69,9 @@ fn add_kraken_toml(language: &str, framework: &str) -> std::io::Result<()> {
 
 fn initialize() -> std::io::Result<()> {
     if Command::new("clear").status().is_err() {
-        error("Failed to run \"mkdir\".")?;
+        if Command::new("cls").status().is_err() {
+            error("Failed to run \"clear\" or \"cls\".")?;
+        }
     }
     // std::process::Command::new("cls").status().unwrap();
     logo();
@@ -99,9 +103,10 @@ fn initialize() -> std::io::Result<()> {
 
 fn create() -> std::io::Result<()> {
     if Command::new("clear").status().is_err() {
-        error("Failed to run \"clear\".")?;
+        if Command::new("cls").status().is_err() {
+            error("Failed to run \"clear\" or \"cls\".")?;
+        }
     }
-    // std::process::Command::new("cls").status().unwrap();
     logo();
     set_theme(MagentaTheme);
     intro(style(" kraken ").on_magenta().black())?;
@@ -118,7 +123,9 @@ fn create() -> std::io::Result<()> {
         .interact()?;
 
     if Command::new("clear").status().is_err() {
-        error("Failed to run \"clear\".")?;
+        if Command::new("cls").status().is_err() {
+            error("Failed to run \"clear\" or \"cls\".")?;
+        }
     }
 
     if Command::new("cargo")
@@ -145,7 +152,9 @@ fn create() -> std::io::Result<()> {
     add_kraken_toml("rs", "axum")?;
 
     if Command::new("clear").status().is_err() {
-        error("Failed to run \"clear\".")?;
+        if Command::new("cls").status().is_err() {
+            error("Failed to run \"clear\" or \"cls\".")?;
+        }
     }
     // std::process::Command::new("cls").status().unwrap();
     logo();
@@ -160,7 +169,10 @@ fn create() -> std::io::Result<()> {
         // add_htmx()?;
     }
 
-    println!("Now you can try \n\t\t\"cd {} && cargo shuttle run\".",name);
+    println!(
+        "Now you can try \n\t\t\"cd {} && cargo shuttle run\".",
+        name
+    );
     Ok(())
 }
 

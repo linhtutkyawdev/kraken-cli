@@ -92,10 +92,16 @@ pub fn add_tailwindcss() -> std::io::Result<()> {
 
     if !std::path::Path::new("./tailwind.config.js").exists() {
         if Command::new("tailwindcss").arg("init").status().is_err() {
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "tailwindcss command faied!",
-            ));
+            if Command::new("npx")
+                .args(["tailwindcss", "init"])
+                .status()
+                .is_err()
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "tailwindcss command faied!",
+                ));
+            }
         }
     }
 
@@ -114,10 +120,22 @@ pub fn add_tailwindcss() -> std::io::Result<()> {
         .status()
         .is_err()
     {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "tailwindcss command faied!",
-        ));
+        if Command::new("npx")
+            .args([
+                "tailwindcss",
+                "-i",
+                "styles/styles.css",
+                "-o",
+                "styles/tailwind.css",
+            ])
+            .status()
+            .is_err()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "tailwindcss command faied!",
+            ));
+        }
     }
 
     if std::path::Path::new("./templates/base.html").exists() {
