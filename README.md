@@ -24,3 +24,8 @@ cargo shuttle deploy
 ## Secreenshots
 
 ![](https://raw.githubusercontent.com/linhtutkyawdev/kraken/master/screenshots/s-1.png)
+![](https://raw.githubusercontent.com/linhtutkyawdev/kraken/master/screenshots/s-2.png)
+![](https://raw.githubusercontent.com/linhtutkyawdev/kraken/master/screenshots/s-3.png)
+![](https://raw.githubusercontent.com/linhtutkyawdev/kraken/master/screenshots/s-4.png)
+![](https://raw.githubusercontent.com/linhtutkyawdev/kraken/master/screenshots/s-5.png)
+![](https://raw.githubusercontent.com/linhtutkyawdev/kraken/master/screenshots/s-6.png)
